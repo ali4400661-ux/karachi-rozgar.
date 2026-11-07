@@ -19,7 +19,6 @@ jobs:
 
       - name: Setup Android SDK and Build Project
         run: |
-          # Install Android SDK Command Line Tools manually
           mkdir -p $HOME/android-sdk/cmdline-tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdtools.zip
           unzip -q cmdtools.zip -d $HOME/android-sdk/cmdline-tools
@@ -29,19 +28,15 @@ jobs:
           export ANDROID_HOME=$HOME/android-sdk
           export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
 
-          # Accept SDK licenses
           yes | sdkmanager --licenses || true
-
-          # Install required SDK components
           sdkmanager "platforms;android-33" "build-tools;33.0.2"
 
-          # Create Minimal Android Project Structure
           mkdir -p android/app/src/main/java/com/karachirozgar/app
           mkdir -p android/app/src/main/res/values
           mkdir -p android/app/src/main/assets
 
-          # Copy Web Frontend Assets
-          cp -r *.html *.json android/app/src/main/assets/ || true
+          # Copy Web Frontend Assets (handling root files correctly)
+          find . -maxdepth 1 \( -name "*.html" -o -name "*.json" -o -name "*.js" -o -name "*.css" \) -exec cp {} android/app/src/main/assets/ \; || true
 
           # Create AndroidManifest.xml
           cat << 'EOF' > android/app/src/main/AndroidManifest.xml
@@ -64,7 +59,7 @@ jobs:
           </manifest>
           EOF
 
-          # Create MainActivity.java to load WebView
+          # Create MainActivity.java
           cat << 'EOF' > android/app/src/main/java/com/karachirozgar/app/MainActivity.java
           package com.karachirozgar.app;
           import android.app.Activity;
@@ -97,7 +92,7 @@ jobs:
                   mavenCentral()
               }
               dependencies {
-                  classpath 'com.android.tools.build:gradle:8.1.0'
+                  classpath 'com.android.tools.build:gradle:7.4.2'
               }
           }
           allprojects {
@@ -114,9 +109,11 @@ jobs:
           rootProject.name = "KarachiRozgar"
           EOF
 
-          # Create app/build.gradle
+          # Create app/build.gradle (using plugins block for compatibility)
           cat << 'EOF' > android/app/build.gradle
-          apply plugin: 'com.android.application'
+          plugins {
+              id 'com.android.application'
+          }
           android {
               namespace 'com.karachirozgar.app'
               compileSdk 33
@@ -137,13 +134,10 @@ jobs:
           }
           EOF
 
-          # Create local.properties
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
-          # Build APK with Gradle
           cd android
-          chmod +x gradlew || true
-          gradle wrapper
+          gradle wrapper --gradle-version 7.5
           ./gradlew assembleDebug
 
       - name: Upload APK Artifact
