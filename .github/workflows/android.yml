@@ -94,7 +94,7 @@ jobs:
           }
           EOF
 
-          # Create root build.gradle
+          # Create root build.gradle with compatible plugin version
           cat << 'EOF' > android/build.gradle
           buildscript {
               repositories {
@@ -102,7 +102,7 @@ jobs:
                   mavenCentral()
               }
               dependencies {
-                  classpath 'com.android.tools.build:gradle:7.4.2'
+                  classpath 'com.android.tools.build:gradle:8.1.0'
               }
           }
           allprojects {
@@ -142,7 +142,7 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
           cd android
-          gradle wrapper --gradle-version 7.5
+          gradle wrapper --gradle-version 8.0
           ./gradlew assembleDebug
 
       - name: Upload APK Artifact
