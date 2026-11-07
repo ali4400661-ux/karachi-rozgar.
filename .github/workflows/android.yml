@@ -32,7 +32,6 @@ jobs:
           sdkmanager "platforms;android-33" "build-tools;33.0.2"
 
           mkdir -p android/app/src/main/java/com/karachirozgar/app
-          mkdir -p android/app/src/main/res/values
           mkdir -p android/app/src/main/assets
 
           find . -maxdepth 1 \( -name "*.html" -o -name "*.json" -o -name "*.js" -o -name "*.css" \) -exec cp {} android/app/src/main/assets/ \; || true
@@ -44,7 +43,7 @@ jobs:
               <application
                   android:allowBackup="true"
                   android:label="Karachi Rozgar"
-                  android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+                  android:theme="@android:style/Theme.NoTitleBar">
                   <activity
                       android:name=".MainActivity"
                       android:exported="true">
@@ -81,66 +80,14 @@ jobs:
           }
           EOF
 
-          cat << 'EOF' > android/build.gradle
-          buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:7.4.2'
-              }
-          }
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          EOF
-
-          cat << 'EOF' > android/settings.gradle
-          include ':app'
-          rootProject.name = "KarachiRozgar"
-          EOF
-
-          cat << 'EOF' > android/app/build.gradle
-          apply plugin: 'com.android.application'
-          android {
-              namespace 'com.karachirozgar.app'
-              compileSdk 33
-              defaultConfig {
-                  applicationId "com.karachirozgar.app"
-                  minSdk 21
-                  targetSdk 33
-                  versionCode 1
-                  versionName "1.0"
-              }
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-          }
-          dependencies {
-              implementation 'androidx.appcompat:appcompat:1.6.1'
-          }
-          EOF
-
-          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
-
           cd android
-          # Direct APK compilation using build-tools aapt and dx/d8 or simple package builder
-          # Using standard android build tools to generate classes and package APK directly
-          $ANDROID_HOME/build-tools/33.0.2/aapt package -f -m -J app/src/main -M app/src/main/AndroidManifest.xml -S app/src/main/res -I $ANDROID_HOME/platforms/android-33/android.jar
+          $ANDROID_HOME/build-tools/33.0.2/aapt package -f -M app/src/main/AndroidManifest.xml -A app/src/main/assets -I $ANDROID_HOME/platforms/android-33/android.jar -F app-unaligned.apk
           
-          # Fallback to direct build-tools compilation for guaranteed success
-          echo "Building APK package..."
-          cd app
-          $ANDROID_HOME/build-tools/33.0.2/aapt package -f -M src/main/AndroidManifest.xml -A src/main/assets -I $ANDROID_HOME/platforms/android-33/android.jar -F ../../output.apk
-          cd ../..
+          # Align and generate final APK
+          $ANDROID_HOME/build-tools/33.0.2/zipalign -f 4 app-unaligned.apk Karachi-Rozgar.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Karachi-Rozgar-APK
-          path: android/output.apk
+          path: android/Karachi-Rozgar.apk
