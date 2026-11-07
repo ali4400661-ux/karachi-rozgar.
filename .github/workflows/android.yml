@@ -34,10 +34,8 @@ jobs:
           mkdir -p app/src/main/java/com/karachirozgar/app
           mkdir -p app/src/main/assets
 
-          # Copy project files safely
           cp -r Karachihub/* app/src/main/assets/ 2>/dev/null || cp *.html app/src/main/assets/ 2>/dev/null || true
 
-          # Manifest
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.karachirozgar.app">
               <uses-permission android:name="android.permission.INTERNET" />
@@ -52,7 +50,6 @@ jobs:
           </manifest>
           EOF
 
-          # MainActivity
           cat << 'EOF' > app/src/main/java/com/karachirozgar/app/MainActivity.java
           package com.karachirozgar.app;
           import android.app.Activity;
@@ -83,7 +80,7 @@ jobs:
           zipalign -f 4 app-unsigned.apk app-aligned.apk
 
           keytool -genkey -v -keystore debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android,O=Android,C=US"
-          apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android app-aligned.apk Karachi-Rozgar.apk
+          apksigner sign --ks debug.keystore --ks-pass pass:android app-aligned.apk Karachi-Rozgar.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
