@@ -17,15 +17,25 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept Android SDK Licenses
+      - name: Setup Android SDK and Build Project
         run: |
+          # Install Android SDK Command Line Tools manually
+          mkdir -p $HOME/android-sdk/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdtools.zip
+          unzip -q cmdtools.zip -d $HOME/android-sdk/cmdline-tools
+          mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
+          rm cmdtools.zip
+
+          export ANDROID_HOME=$HOME/android-sdk
+          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
+
+          # Accept SDK licenses
           yes | sdkmanager --licenses || true
 
-      - name: Create Minimal Android Project
-        run: |
+          # Install required SDK components
+          sdkmanager "platforms;android-33" "build-tools;33.0.2"
+
+          # Create Minimal Android Project Structure
           mkdir -p android/app/src/main/java/com/karachirozgar/app
           mkdir -p android/app/src/main/res/values
           mkdir -p android/app/src/main/assets
@@ -40,7 +50,6 @@ jobs:
               <uses-permission android:name="android.permission.INTERNET" />
               <application
                   android:allowBackup="true"
-                  android:icon="@mipmap/ic_launcher"
                   android:label="Karachi Rozgar"
                   android:theme="@style/Theme.AppCompat.Light.NoActionBar">
                   <activity
@@ -80,7 +89,7 @@ jobs:
           }
           EOF
 
-          # Create build.gradle
+          # Create root build.gradle
           cat << 'EOF' > android/build.gradle
           buildscript {
               repositories {
@@ -128,11 +137,10 @@ jobs:
           }
           EOF
 
-          # Create local.properties for Android SDK path
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+          # Create local.properties
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
-      - name: Build APK with Gradle
-        run: |
+          # Build APK with Gradle
           cd android
           chmod +x gradlew || true
           gradle wrapper
