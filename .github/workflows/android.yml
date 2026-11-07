@@ -17,7 +17,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK and Build APK
+      - name: Setup Android SDK
         run: |
           mkdir -p $HOME/android-sdk/cmdline-tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdtools.zip
@@ -29,20 +29,31 @@ jobs:
           export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
 
           yes | sdkmanager --licenses || true
-          sdkmanager "platforms;android-33" "build-tools;33.0.2"
+          sdkmanager "platforms;android-33" "build-tools;33.0.2" "platform-tools"
 
+          # Create Standard Android Studio Project Structure
           mkdir -p android/app/src/main/java/com/karachirozgar/app
+          mkdir -p android/app/src/main/res/values
           mkdir -p android/app/src/main/assets
 
+          # Copy Web Frontend Assets
           find . -maxdepth 1 \( -name "*.html" -o -name "*.json" -o -name "*.js" -o -name "*.css" \) -exec cp {} android/app/src/main/assets/ \; || true
 
+          # Create strings.xml for App Name
+          cat << 'EOF' > android/app/src/main/res/values/strings.xml
+          <resources>
+              <string name="app_name">Karachi Rozgar</string>
+          </resources>
+          EOF
+
+          # Create AndroidManifest.xml
           cat << 'EOF' > android/app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               package="com.karachirozgar.app">
               <uses-permission android:name="android.permission.INTERNET" />
               <application
                   android:allowBackup="true"
-                  android:label="Karachi Rozgar"
+                  android:label="@string/app_name"
                   android:theme="@android:style/Theme.NoTitleBar">
                   <activity
                       android:name=".MainActivity"
@@ -56,6 +67,7 @@ jobs:
           </manifest>
           EOF
 
+          # Create MainActivity.java
           cat << 'EOF' > android/app/src/main/java/com/karachirozgar/app/MainActivity.java
           package com.karachirozgar.app;
           import android.app.Activity;
@@ -80,11 +92,76 @@ jobs:
           }
           EOF
 
+          # Create root build.gradle
+          cat << 'EOF' > android/build.gradle
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:7.4.2'
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          EOF
+
+          # Create settings.gradle
+          cat << 'EOF' > android/settings.gradle
+          include ':app'
+          rootProject.name = "KarachiRozgar"
+          EOF
+
+          # Create app/build.gradle
+          cat << 'EOF' > android/app/build.gradle
+          apply plugin: 'com.android.application'
+          android {
+              namespace 'com.karachirozgar.app'
+              compileSdk 33
+              defaultConfig {
+                  applicationId "com.karachirozgar.app"
+                  minSdk 21
+                  targetSdk 33
+                  versionCode 1
+                  versionName "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          EOF
+
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+
           cd android
-          $ANDROID_HOME/build-tools/33.0.2/aapt package -f -M app/src/main/AndroidManifest.xml -A app/src/main/assets -I $ANDROID_HOME/platforms/android-33/android.jar -F app-unaligned.apk
           
-          # Align and generate final APK
-          $ANDROID_HOME/build-tools/33.0.2/zipalign -f 4 app-unaligned.apk Karachi-Rozgar.apk
+          # Compile resources and classes using build-tools properly
+          $ANDROID_HOME/build-tools/33.0.2/aapt package -f -m -J app/src/main/java -M app/src/main/AndroidManifest.xml -S app/src/main/res -I $ANDROID_HOME/platforms/android-33/android.jar
+          
+          # Compile java source into dex
+          $ANDROID_HOME/build-tools/33.0.2/javac app/src/main/java/com/karachirozgar/app/*.java -classpath $ANDROID_HOME/platforms/android-33/android.jar -d obj/
+          cd obj
+          $ANDROID_HOME/build-tools/33.0.2/dx --dex --output=classes.dex .
+          cd ..
+          
+          # Package everything into final valid APK
+          $ANDROID_HOME/build-tools/33.0.2/aapt package -f -M app/src/main/AndroidManifest.xml -A app/src/main/assets -S app/src/main/res -I $ANDROID_HOME/platforms/android-33/android.jar -F Karachi-Rozgar-unsigned.apk
+          
+          # Add classes.dex into APK
+          $ANDROID_HOME/build-tools/33.0.2/aapt add Karachi-Rozgar-unsigned.apk obj/classes.dex
+          
+          # Align and sign with debug key so it installs on phone
+          $ANDROID_HOME/build-tools/33.0.2/zipalign -f 4 Karachi-Rozgar-unsigned.apk Karachi-Rozgar-aligned.apk
+          
+          # Generate debug keystore and sign
+          keytool -genkey -v -keystore debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -passpass android -storepass android -dname "CN=Android Debug,O=Android,C=US" || true
+          $ANDROID_HOME/build-tools/33.0.2/apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android Karachi-Rozgar-aligned.apk Karachi-Rozgar.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
