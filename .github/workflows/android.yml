@@ -17,7 +17,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK and Build Project
+      - name: Setup Android SDK
         run: |
           mkdir -p $HOME/android-sdk/cmdline-tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdtools.zip
@@ -35,10 +35,8 @@ jobs:
           mkdir -p android/app/src/main/res/values
           mkdir -p android/app/src/main/assets
 
-          # Copy Web Frontend Assets (handling root files correctly)
           find . -maxdepth 1 \( -name "*.html" -o -name "*.json" -o -name "*.js" -o -name "*.css" \) -exec cp {} android/app/src/main/assets/ \; || true
 
-          # Create AndroidManifest.xml
           cat << 'EOF' > android/app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               package="com.karachirozgar.app">
@@ -59,7 +57,6 @@ jobs:
           </manifest>
           EOF
 
-          # Create MainActivity.java
           cat << 'EOF' > android/app/src/main/java/com/karachirozgar/app/MainActivity.java
           package com.karachirozgar.app;
           import android.app.Activity;
@@ -84,16 +81,9 @@ jobs:
           }
           EOF
 
-          # Create root build.gradle
           cat << 'EOF' > android/build.gradle
-          buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:7.4.2'
-              }
+          plugins {
+              id 'com.android.application' version '8.2.0' apply false
           }
           allprojects {
               repositories {
@@ -103,13 +93,11 @@ jobs:
           }
           EOF
 
-          # Create settings.gradle
           cat << 'EOF' > android/settings.gradle
           include ':app'
           rootProject.name = "KarachiRozgar"
           EOF
 
-          # Create app/build.gradle (using plugins block for compatibility)
           cat << 'EOF' > android/app/build.gradle
           plugins {
               id 'com.android.application'
@@ -137,7 +125,6 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
           cd android
-          gradle wrapper --gradle-version 7.5
           ./gradlew assembleDebug
 
       - name: Upload APK Artifact
