@@ -17,7 +17,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK and Build Final APK
+      - name: Setup Android SDK and Build APK
         run: |
           mkdir -p $HOME/android-sdk/cmdline-tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdtools.zip
@@ -102,11 +102,7 @@ jobs:
           cd ..
 
           # 5. Align APK
-          zipalign -f 4 Karachi-Rozgar-unsigned.apk Karachi-Rozgar-aligned.apk
-
-          # 6. Generate Keystore and Sign using standard apksigner syntax
-          keytool -genkey -v -keystore release.keystore -alias rozgaralias -keyalg RSA -keysize 2048 -validity 10000 -passin pass:password123 -passout pass:password123 -dname "CN=Karachi,O=Rozgar,C=PK"
-          apksigner sign --ks release.keystore --ks-keypass pass:password123 --ks-pass pass:password123 Karachi-Rozgar-aligned.apk Karachi-Rozgar.apk
+          zipalign -f 4 Karachi-Rozgar-unsigned.apk Karachi-Rozgar.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
