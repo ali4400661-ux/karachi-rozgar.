@@ -11,10 +11,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          node-version: '18'
+          python-version: '3.10'
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -22,21 +22,106 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Build APK via PWABuilder CLI
+      - name: Build Direct APK via Python Builder
         run: |
-          npm install -g @pwabuilder/pwapush @pwabuilder/cli
+          python3 -c "
+          import os, subprocess, urllib.request, zipfile
 
-          # Create PWABuilder Android package package using CLI manifest generator
-          npx @pwabuilder/cli generate --name "Karachi Rozgar" --short-name "Rozgar" --start-url "./index.html" --background-color "#ffffff" --theme-color "#000000" --icon "https://via.placeholder.com/512" --manifest-version 1 --package-id "com.karachirozgar.app" || true
+          print('Setting up Android SDK...')
+          os.makedirs('android-sdk/cmdline-tools', exist_ok=True)
+          urllib.request.urlretrieve('https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip', 'cmdtools.zip')
+          with zipfile.ZipFile('cmdtools.zip', 'r') as zip_ref:
+              zip_ref.extractall('android-sdk/cmdline-tools')
+          os.rename('android-sdk/cmdline-tools/cmdline-tools', 'android-sdk/cmdline-tools/latest')
 
-          # If default android project exists, look for it, otherwise build generic wrapper
-          find . -name "*.apk" -o -name "app-*.apk"
+          sdk_home = os.path.abspath('android-sdk')
+          os.environ['ANDROID_HOME'] = sdk_home
+          bin_path = os.path.join(sdk_home, 'cmdline-tools/latest/bin')
+          platform_tools = os.path.join(sdk_home, 'platform-tools')
+          build_tools = os.path.join(sdk_home, 'build-tools/33.0.2')
+          os.environ['PATH'] = f\"{bin_path}:{platform_tools}:{build_tools}:\" + os.environ['PATH']
+
+          # Accept licenses and install build-tools
+          subprocess.run(['yes'], stdout=subprocess.PIPE)
+          subprocess.run([os.path.join(bin_path, 'sdkmanager'), '--licenses'], input=b'y\n'*10, capture_output=True)
+          subprocess.run([os.path.join(bin_path, 'sdkmanager'), 'platforms;android-33', 'build-tools;33.0.2', 'platform-tools'])
+
+          print('Creating app structure...')
+          os.makedirs('project/app/src/main/java/com/karachirozgar/app', exist_ok=True)
+          os.makedirs('project/app/src/main/assets', exist_ok=True)
+          os.makedirs('project/bin', exist_ok=True)
+
+          # Copy project files into assets
+          import shutil
+          for item in os.listdir('.'):
+              if item not in ['.git', 'android-sdk', 'project', '.github', 'cmdtools.zip']:
+                  if os.path.isdir(item):
+                      shutil.copytree(item, os.path.join('project/app/src/main/assets', item), dirs_exist_ok=True)
+                  else:
+                      shutil.copy(item, 'project/app/src/main/assets')
+
+          # Create Manifest
+          manifest_content = '''<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" package=\"com.karachirozgar.app\">
+              <uses-permission android:name=\"android.permission.INTERNET\" />
+              <application android:allowBackup=\"true\" android:label=\"Karachi Rozgar\" android:theme=\"@android:style/Theme.NoTitleBar\">
+                  <activity android:name=\".MainActivity\" android:exported=\"true\">
+                      <intent-filter>
+                          <action android:name=\"android.intent.action.MAIN\" />
+                          <category android:name=\"android.intent.category.LAUNCHER\" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>'''
+          with open('project/app/src/main/AndroidManifest.xml', 'w') as f:
+              f.write(manifest_content)
+
+          # Create MainActivity.java
+          java_code = '''package com.karachirozgar.app;
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebView;
+          import android.webkit.WebSettings;
+          import android.webkit.WebViewClient;
+          public class MainActivity extends Activity {
+              private WebView webView;
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  webView = new WebView(this);
+                  WebSettings webSettings = webView.getSettings();
+                  webSettings.setJavaScriptEnabled(true);
+                  webSettings.setDomStorageEnabled(true);
+                  webView.setWebViewClient(new WebViewClient());
+                  webView.loadUrl(\"file:///android_asset/Karachihub/index.html\");
+                  setContentView(webView);
+              }
+          }'''
+          with open('project/app/src/main/java/com/karachirozgar/app/MainActivity.java', 'w') as f:
+              f.write(java_code)
+
+          os.chdir('project')
+          android_jar = os.path.join(sdk_home, 'platforms/android-33/android.jar')
+          
+          print('Compiling...')
+          subprocess.run(['javac', '-source', '1.8', '-target', '1.8', '-bootclasspath', android_jar, 'app/src/main/java/com/karachirozgar/app/MainActivity.java', '-d', 'bin'])
+          
+          print('Converting to dex...')
+          subprocess.run(['d8', '--output', 'bin/', 'bin/com/karachirozgar/app/MainActivity.class', '--lib', android_jar])
+          
+          print('Packaging resources...')
+          subprocess.run(['aapt', 'package', '-f', '-M', 'app/src/main/AndroidManifest.xml', '-A', 'app/src/main/assets', '-I', android_jar, '-F', 'Karachi-Rozgar-unsigned.apk'])
+          
+          os.chdir('bin')
+          subprocess.run(['aapt', 'add', '../Karachi-Rozgar-unsigned.apk', 'classes.dex'])
+          os.chdir('..')
+          
+          print('Aligning and Signing...')
+          subprocess.run(['zipalign', '-f', '4', 'Karachi-Rozgar-unsigned.apk', 'Karachi-Rozgar.apk'])
+          print('Build completed successfully!')
+          "
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Karachi-Rozgar-APK
-          path: |
-            *.apk
-            **/build/outputs/apk/**/*.apk
-            app/build/outputs/apk/**/*.apk
+          path: project/Karachi-Rozgar.apk
