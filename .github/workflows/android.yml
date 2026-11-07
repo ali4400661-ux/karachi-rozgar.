@@ -17,10 +17,8 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Gradle and Android SDK
+      - name: Setup Android SDK and Build Direct APK
         run: |
-          sudo apt-get update && sudo apt-get install -y gradle
-
           mkdir -p $HOME/android-sdk/cmdline-tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdtools.zip
           unzip -q cmdtools.zip -d $HOME/android-sdk/cmdline-tools
@@ -28,34 +26,27 @@ jobs:
           rm cmdtools.zip
 
           export ANDROID_HOME=$HOME/android-sdk
-          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
+          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/33.0.2
 
           yes | sdkmanager --licenses || true
           sdkmanager "platforms;android-33" "build-tools;33.0.2" "platform-tools"
 
-          # Create Standard Android Project Structure
-          mkdir -p android/app/src/main/java/com/karachirozgar/app
-          mkdir -p android/app/src/main/res/values
-          mkdir -p android/app/src/main/assets
+          # Create directories
+          mkdir -p project/app/src/main/java/com/karachirozgar/app
+          mkdir -p project/app/src/main/assets
+          mkdir -p project/bin
 
-          # Copy Web Frontend Assets
-          find . -maxdepth 1 \( -name "*.html" -o -name "*.json" -o -name "*.js" -o -name "*.css" \) -exec cp {} android/app/src/main/assets/ \; || true
-
-          # Create strings.xml
-          cat << 'EOF' > android/app/src/main/res/values/strings.xml
-          <resources>
-              <string name="app_name">Karachi Rozgar</string>
-          </resources>
-          EOF
+          # Copy Web Assets
+          find . -maxdepth 1 \( -name "*.html" -o -name "*.json" -o -name "*.js" -o -name "*.css" \) -exec cp {} project/app/src/main/assets/ \; || true
 
           # Create AndroidManifest.xml
-          cat << 'EOF' > android/app/src/main/AndroidManifest.xml
+          cat << 'EOF' > project/app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               package="com.karachirozgar.app">
               <uses-permission android:name="android.permission.INTERNET" />
               <application
                   android:allowBackup="true"
-                  android:label="@string/app_name"
+                  android:label="Karachi Rozgar"
                   android:theme="@android:style/Theme.NoTitleBar">
                   <activity
                       android:name=".MainActivity"
@@ -70,7 +61,7 @@ jobs:
           EOF
 
           # Create MainActivity.java
-          cat << 'EOF' > android/app/src/main/java/com/karachirozgar/app/MainActivity.java
+          cat << 'EOF' > project/app/src/main/java/com/karachirozgar/app/MainActivity.java
           package com.karachirozgar.app;
           import android.app.Activity;
           import android.os.Bundle;
@@ -94,59 +85,31 @@ jobs:
           }
           EOF
 
-          # Create root build.gradle with Gradle 8.1.0 plugin
-          cat << 'EOF' > android/build.gradle
-          buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.1.0'
-              }
-          }
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          EOF
+          cd project
 
-          # Create settings.gradle
-          cat << 'EOF' > android/settings.gradle
-          include ':app'
-          rootProject.name = "KarachiRozgar"
-          EOF
+          # 1. Compile Java files to class files using modern compiler
+          javac -source 17 -target 17 -classpath $ANDROID_HOME/platforms/android-33/android.jar app/src/main/java/com/karachirozgar/app/*.java -d bin/
 
-          # Create app/build.gradle
-          cat << 'EOF' > android/app/build.gradle
-          apply plugin: 'com.android.application'
-          android {
-              namespace 'com.karachirozgar.app'
-              compileSdk 33
-              defaultConfig {
-                  applicationId "com.karachirozgar.app"
-                  minSdk 21
-                  targetSdk 33
-                  versionCode 1
-                  versionName "1.0"
-              }
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-          }
-          EOF
+          # 2. Convert class files to classes.dex using d8
+          d8 --output bin/ bin/com/karachirozgar/app/*.class --lib $ANDROID_HOME/platforms/android-33/android.jar
 
-          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+          # 3. Package resources with aapt
+          aapt package -f -M app/src/main/AndroidManifest.xml -A app/src/main/assets -I $ANDROID_HOME/platforms/android-33/android.jar -F Karachi-Rozgar-unsigned.apk
 
-          cd android
-          gradle wrapper --gradle-version 8.2
-          ./gradlew assembleDebug
+          # 4. Add classes.dex into the APK
+          cd bin
+          aapt add ../Karachi-Rozgar-unsigned.apk classes.dex
+          cd ..
+
+          # 5. Align APK
+          zipalign -f 4 Karachi-Rozgar-unsigned.apk Karachi-Rozgar-aligned.apk
+
+          # 6. Sign APK with debug key
+          keytool -genkey -v -keystore debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android,O=Android,C=US"
+          apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android Karachi-Rozgar-aligned.apk Karachi-Rozgar.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Karachi-Rozgar-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: project/Karachi-Rozgar.apk
