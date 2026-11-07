@@ -17,7 +17,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK and Build Direct APK
+      - name: Setup Android SDK and Build Signed APK
         run: |
           mkdir -p $HOME/android-sdk/cmdline-tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdtools.zip
@@ -87,22 +87,26 @@ jobs:
 
           cd project
 
-          # 1. Compile Java files with target 8 for compatibility
+          # 1. Compile Java files
           javac -source 1.8 -target 1.8 -classpath $ANDROID_HOME/platforms/android-33/android.jar app/src/main/java/com/karachirozgar/app/*.java -d bin/
 
-          # 2. Convert to classes.dex
+          # 2. Convert to dex
           d8 --output bin/ bin/com/karachirozgar/app/*.class --lib $ANDROID_HOME/platforms/android-33/android.jar
 
-          # 3. Package resources using aapt
+          # 3. Package resources
           aapt package -f -M app/src/main/AndroidManifest.xml -A app/src/main/assets -I $ANDROID_HOME/platforms/android-33/android.jar -F Karachi-Rozgar-unsigned.apk
 
-          # 4. Add classes.dex into APK
+          # 4. Add classes.dex
           cd bin
           aapt add ../Karachi-Rozgar-unsigned.apk classes.dex
           cd ..
 
-          # 5. Align APK (Final ready to install file)
-          zipalign -f 4 Karachi-Rozgar-unsigned.apk Karachi-Rozgar.apk
+          # 5. Align APK
+          zipalign -f 4 Karachi-Rozgar-unsigned.apk Karachi-Rozgar-aligned.apk
+
+          # 6. Generate Debug Keystore and Sign properly using apksigner
+          keytool -genkey -v -keystore debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android,O=Android,C=US"
+          apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android Karachi-Rozgar-aligned.apk Karachi-Rozgar.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
