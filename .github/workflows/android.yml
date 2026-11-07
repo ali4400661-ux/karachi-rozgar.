@@ -17,9 +17,8 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Create and Build Fast APK
+      - name: Build Final Signed APK
         run: |
-          # Download Android Command Line Tools directly
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O tools.zip
           unzip -q tools.zip
           mkdir -p android-sdk/cmdline-tools
@@ -32,18 +31,17 @@ jobs:
           yes | sdkmanager --licenses || true
           sdkmanager "platforms;android-33" "build-tools;33.0.2" "platform-tools"
 
-          # Setup minimal app source
           mkdir -p app/src/main/java/com/karachirozgar/app
           mkdir -p app/src/main/assets
 
-          # Copy files to assets safely
+          # Copy project files safely
           cp -r Karachihub/* app/src/main/assets/ 2>/dev/null || cp *.html app/src/main/assets/ 2>/dev/null || true
 
           # Manifest
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.karachirozgar.app">
               <uses-permission android:name="android.permission.INTERNET" />
-              <application android:label="Karachi Rozgar" android:theme="@android:style/Theme.NoTitleBar">
+              <application android:allowBackup="true" android:label="Karachi Rozgar" android:theme="@android:style/Theme.NoTitleBar">
                   <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -82,7 +80,10 @@ jobs:
           d8 --output bin/ bin/com/karachirozgar/app/MainActivity.class --lib $ANDROID_HOME/platforms/android-33/android.jar
           aapt package -f -M app/src/main/AndroidManifest.xml -A app/src/main/assets -I $ANDROID_HOME/platforms/android-33/android.jar -F app-unsigned.apk
           cd bin && aapt add ../app-unsigned.apk classes.dex && cd ..
-          zipalign -f 4 app-unsigned.apk Karachi-Rozgar.apk
+          zipalign -f 4 app-unsigned.apk app-aligned.apk
+
+          keytool -genkey -v -keystore debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android,O=Android,C=US"
+          apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android app-aligned.apk Karachi-Rozgar.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
